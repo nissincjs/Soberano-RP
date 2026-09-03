@@ -8,7 +8,13 @@ interface TopNavbarProps {
 }
 
 export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, sidebarOpen }) => {
-  const { citizen, logout } = useBrasilSoberano();
+  const { citizen, logout, activeTab } = useBrasilSoberano();
+
+  const pageTitle: Record<string, { title: string; subtitle: string }> = {
+    dashboard: { title: 'Dashboard', subtitle: 'Painel Principal' },
+    wallet: { title: 'Carteira', subtitle: 'Financeiro do Cidadão' },
+  };
+  const current = pageTitle[activeTab] ?? { title: 'Dashboard', subtitle: 'Painel Principal' };
 
   return (
     <header className="sticky top-0 z-30 h-16 w-full bg-[#090a0f]/90 backdrop-blur-xl border-b border-[#1e222d] px-4 sm:px-6 flex items-center justify-between gap-4">
@@ -30,8 +36,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, sidebarOp
         </button>
 
         <div className="flex items-center gap-2">
-          <span className="font-bold text-sm text-white">Dashboard</span>
-          <span className="text-xs text-slate-500 font-mono hidden sm:inline">| Painel Principal</span>
+          <span className="font-bold text-sm text-white">{current.title}</span>
+          <span className="text-xs text-slate-500 font-mono hidden sm:inline">| {current.subtitle}</span>
         </div>
       </div>
 

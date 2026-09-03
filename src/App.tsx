@@ -4,13 +4,15 @@ import { Sidebar } from './components/Sidebar';
 import { TopNavbar } from './components/TopNavbar';
 import { LoginPage } from './components/auth/LoginPage';
 import { ExecutiveDashboard } from './components/dashboard/ExecutiveDashboard';
+import { WalletPage } from './components/wallet/WalletPage';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 const DashboardContent: React.FC = () => {
   const {
     toastMessage,
     isAuthenticated,
-    authLoading
+    authLoading,
+    activeTab
   } = useBrasilSoberano();
 
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
@@ -78,7 +80,7 @@ const DashboardContent: React.FC = () => {
 
         {/* 3. Main Workspace Canvas */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
-          <ExecutiveDashboard />
+          {activeTab === 'wallet' ? <WalletPage /> : <ExecutiveDashboard />}
         </main>
 
         {/* Minimalist Dashboard Footer */}

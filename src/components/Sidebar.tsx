@@ -2,6 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard,
   Landmark,
+  Wallet,
   X,
   LogOut
 } from 'lucide-react';
@@ -70,22 +71,50 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 Principal
               </div>
               <div className="space-y-1">
-                <button
-                  id="sidebar-nav-dashboard"
-                  onClick={() => {
-                    setActiveTab('dashboard');
-                    if (window.innerWidth < 1024) {
-                      onClose();
-                    }
-                  }}
-                  className="flex items-center justify-between w-full px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-[#1e222d] text-white shadow-sm border border-white/10"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <LayoutDashboard className="w-4 h-4 text-emerald-400" />
-                    <span>Dashboard</span>
-                  </div>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                </button>
+                {[
+                  {
+                    id: 'dashboard',
+                    label: 'Dashboard',
+                    icon: LayoutDashboard,
+                    dotClass: 'bg-emerald-400',
+                    iconActiveClass: 'text-emerald-400'
+                  },
+                  {
+                    id: 'wallet',
+                    label: 'Carteira',
+                    icon: Wallet,
+                    dotClass: 'bg-emerald-400',
+                    iconActiveClass: 'text-emerald-400'
+                  }
+                ].map((item) => {
+                  const isActive = activeTab === item.id;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      id={`sidebar-nav-${item.id}`}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        if (window.innerWidth < 1024) {
+                          onClose();
+                        }
+                      }}
+                      className={`flex items-center justify-between w-full px-3 py-2.5 rounded-lg text-xs font-bold transition-all ${
+                        isActive
+                          ? 'bg-[#1e222d] text-white shadow-sm border border-white/10'
+                          : 'text-slate-400 hover:text-white hover:bg-[#141720] border border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Icon
+                          className={`w-4 h-4 ${isActive ? item.iconActiveClass : 'text-slate-500'}`}
+                        />
+                        <span>{item.label}</span>
+                      </div>
+                      {isActive && <span className={`w-1.5 h-1.5 rounded-full ${item.dotClass}`}></span>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
