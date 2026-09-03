@@ -3,10 +3,12 @@ import {
   LayoutDashboard,
   Landmark,
   Wallet,
+  UserRound,
   X,
   LogOut
 } from 'lucide-react';
 import { useBrasilSoberano } from '../context/BrasilSoberanoContext';
+import { Avatar } from './ui/Avatar';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -85,6 +87,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     icon: Wallet,
                     dotClass: 'bg-emerald-400',
                     iconActiveClass: 'text-emerald-400'
+                  },
+                  {
+                    id: 'profile',
+                    label: 'Meu Perfil',
+                    icon: UserRound,
+                    dotClass: 'bg-emerald-400',
+                    iconActiveClass: 'text-emerald-400'
                   }
                 ].map((item) => {
                   const isActive = activeTab === item.id;
@@ -124,10 +133,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <div className="p-3 border-t border-[#1e222d] bg-[#0c0e14]">
           <div className="flex items-center justify-between p-2 rounded-xl bg-[#141720] border border-[#1e222d]">
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <img
+              <Avatar
                 src={citizen.avatarUrl}
-                alt={citizen.name}
-                className="w-8 h-8 rounded-lg object-cover border border-emerald-500/40 shrink-0"
+                name={citizen.name}
+                className="w-8 h-8 rounded-lg border border-emerald-500/40 shrink-0"
               />
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold text-white truncate">

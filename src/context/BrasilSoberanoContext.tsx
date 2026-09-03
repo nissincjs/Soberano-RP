@@ -94,6 +94,8 @@ function friendlyError(error?: string): string {
       return 'Informe seu nome completo.';
     case 'senha_curta':
       return 'A senha deve ter ao menos 4 caracteres.';
+    case 'senha_incorreta':
+      return 'Senha atual incorreta. Verifique e tente novamente.';
     case 'nao_encontrado':
       return 'Cidadão não encontrado.';
     default:

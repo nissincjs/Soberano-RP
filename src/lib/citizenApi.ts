@@ -54,6 +54,44 @@ export function fetchCitizen(id: string): Promise<CitizenEnvelope> {
   return callRpc('get_citizen', { p_id: id });
 }
 
+export interface UpdateProfilePayload {
+  name: string;
+  avatarUrl?: string;
+  state?: string;
+  city?: string;
+  bio?: string;
+  phone?: string;
+}
+
+export function updateCitizenProfile(id: string, data: UpdateProfilePayload): Promise<CitizenEnvelope> {
+  return callRpc('update_citizen_profile', {
+    p_id: id,
+    p_name: data.name,
+    p_avatar_url: data.avatarUrl ?? '',
+    p_state: data.state ?? '',
+    p_city: data.city ?? '',
+    p_bio: data.bio ?? '',
+    p_phone: data.phone ?? '',
+  });
+}
+
+export interface PasswordEnvelope {
+  ok: boolean;
+  error?: string;
+}
+
+export function changePassword(args: {
+  id: string;
+  currentPassword: string;
+  newPassword: string;
+}): Promise<PasswordEnvelope> {
+  return callRpc('change_password', {
+    p_id: args.id,
+    p_current_password: args.currentPassword,
+    p_new_password: args.newPassword,
+  });
+}
+
 export interface WalletEnvelope {
   ok: boolean;
   error?: string;

@@ -1,6 +1,7 @@
 import React from 'react';
 import { PanelLeft, LogOut } from 'lucide-react';
 import { useBrasilSoberano } from '../context/BrasilSoberanoContext';
+import { Avatar } from './ui/Avatar';
 
 interface TopNavbarProps {
   onToggleSidebar: () => void;
@@ -8,11 +9,12 @@ interface TopNavbarProps {
 }
 
 export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, sidebarOpen }) => {
-  const { citizen, logout, activeTab } = useBrasilSoberano();
+  const { citizen, logout, activeTab, setActiveTab } = useBrasilSoberano();
 
   const pageTitle: Record<string, { title: string; subtitle: string }> = {
     dashboard: { title: 'Dashboard', subtitle: 'Painel Principal' },
     wallet: { title: 'Carteira', subtitle: 'Financeiro do Cidadão' },
+    profile: { title: 'Meu Perfil', subtitle: 'Configurações do Cidadão' },
   };
   const current = pageTitle[activeTab] ?? { title: 'Dashboard', subtitle: 'Painel Principal' };
 
@@ -43,11 +45,15 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, sidebarOp
 
       {/* Right side: Citizen Info & Logout */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2.5 pl-2">
-          <img
+        <button
+          onClick={() => setActiveTab('profile')}
+          className="flex items-center gap-2.5 pl-2 rounded-lg hover:bg-[#141720] transition-colors cursor-pointer"
+          title="Ver meu perfil"
+        >
+          <Avatar
             src={citizen.avatarUrl}
-            alt={citizen.name}
-            className="w-8 h-8 rounded-lg object-cover border border-[#1e222d]"
+            name={citizen.name}
+            className="w-8 h-8 rounded-lg border border-[#1e222d]"
           />
           <div className="hidden sm:block text-left">
             <div className="text-xs font-bold text-white leading-tight">
@@ -57,7 +63,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, sidebarOp
               {citizen.role || 'Cidadão'} • {citizen.state}
             </div>
           </div>
-        </div>
+        </button>
 
         <button
           onClick={logout}

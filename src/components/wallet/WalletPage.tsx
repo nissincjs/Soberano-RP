@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useBrasilSoberano } from '../../context/BrasilSoberanoContext';
 import { getWallet, findPixRecipient, sendPix } from '../../lib/citizenApi';
+import { Avatar } from '../ui/Avatar';
 import type { WalletTransaction, PixRecipient } from '../../types';
 import {
   formatBRL,
@@ -364,10 +365,10 @@ export const WalletPage: React.FC = () => {
           <div className="text-sm font-black text-white mb-4">Meus dados</div>
           <div className="space-y-3 text-xs">
             <div className="flex items-center gap-3">
-              <img
+              <Avatar
                 src={citizen.avatarUrl}
-                alt={citizen.name}
-                className="w-10 h-10 rounded-xl object-cover border border-emerald-500/30"
+                name={citizen.name}
+                className="w-10 h-10 rounded-xl border border-emerald-500/30"
               />
               <div className="min-w-0">
                 <div className="text-white font-bold truncate">{citizen.name}</div>

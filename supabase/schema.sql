@@ -19,12 +19,20 @@ create table if not exists public.citizens (
   password    text,
   avatar_url  text,
   title_number text,
+  bio         text,
+  phone       text,
+  city        text,
   created_at  timestamptz not null default now()
 );
 
 -- Bloqueia acesso direto via API REST (anon/authenticated).
 -- O acesso acontece apenas pelas funções abaixo (security definer).
 alter table public.citizens enable row level security;
+
+-- Colunas do perfil completo (aditivas: não quebram registros existentes)
+alter table public.citizens add column if not exists bio text;
+alter table public.citizens add column if not exists phone text;
+alter table public.citizens add column if not exists city text;
 
 -- -------------------------------------------------------------
 -- Carteira: saldo em centavos (NUNCA usar float/double p/ dinheiro)
@@ -116,6 +124,9 @@ begin
       p_citizen.party,
       p_citizen.avatar_url as "avatarUrl",
       p_citizen.title_number as "titleNumber",
+      p_citizen.bio,
+      p_citizen.phone,
+      p_citizen.city,
       p_citizen.balance_cents as "balanceCents",
       extract(epoch from p_citizen.created_at) * 1000 as "createdAt"
   ) x;
@@ -239,6 +250,89 @@ $$;
 grant execute on function public.register_citizen(text, text, text, text, text, text, text, text) to anon, authenticated;
 grant execute on function public.login_citizen(text, text) to anon, authenticated;
 grant execute on function public.get_citizen(uuid) to anon, authenticated;
+
+-- -------------------------------------------------------------
+-- Atualização do perfil do cidadão (dados editáveis de identidade).
+-- Email, CPF, saldo e credenciais NÃO são alterados aqui.
+-- Retorna: { ok: true, citizen: {...} } ou { ok: false, error: '...' }
+-- -------------------------------------------------------------
+create or replace function public.update_citizen_profile(
+  p_id uuid,
+  p_name text,
+  p_avatar_url text,
+  p_state text,
+  p_city text,
+  p_bio text,
+  p_phone text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_row public.citizens;
+begin
+  if length(coalesce(p_name, '')) = 0 then
+    return jsonb_build_object('ok', false, 'error', 'nome_obrigatorio');
+  end if;
+
+  update public.citizens
+  set name        = trim(p_name),
+      avatar_url  = nullif(trim(coalesce(p_avatar_url, '')), ''),
+      state       = upper(coalesce(nullif(trim(p_state), ''), 'DF')),
+      city        = nullif(trim(coalesce(p_city, '')), ''),
+      bio         = left(nullif(trim(coalesce(p_bio, '')), ''), 280),
+      phone       = nullif(trim(coalesce(p_phone, '')), '')
+  where id = p_id
+  returning * into v_row;
+
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'nao_encontrado');
+  end if;
+
+  return jsonb_build_object('ok', true, 'citizen', public.citizen_to_json(v_row));
+end
+$$;
+
+-- -------------------------------------------------------------
+-- Troca de senha (exige a senha atual para confirmar a identidade)
+-- Retorna: { ok: true } ou { ok: false, error: 'senha_incorreta'/'senha_curta' }
+-- -------------------------------------------------------------
+create or replace function public.change_password(
+  p_id uuid,
+  p_current_password text,
+  p_new_password text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_password text;
+begin
+  select password into v_password from public.citizens where id = p_id;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'nao_encontrado');
+  end if;
+
+  if v_password is null or v_password = ''
+     or v_password <> crypt(coalesce(p_current_password, ''), v_password) then
+    return jsonb_build_object('ok', false, 'error', 'senha_incorreta');
+  end if;
+
+  if length(coalesce(p_new_password, '')) < 4 then
+    return jsonb_build_object('ok', false, 'error', 'senha_curta');
+  end if;
+
+  update public.citizens set password = crypt(p_new_password, gen_salt('bf', 10))
+  where id = p_id;
+
+  return jsonb_build_object('ok', true);
+end
+$$;
+
+grant execute on function public.update_citizen_profile(uuid, text, text, text, text, text, text) to anon, authenticated;
+grant execute on function public.change_password(uuid, text, text) to anon, authenticated;
 
 -- -------------------------------------------------------------
 -- Cidadão demo (login rápido "Gov.br"): cidadao@brasilsoberano.gov.br / cidadao123

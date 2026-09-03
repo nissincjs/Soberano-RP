@@ -9,6 +9,9 @@ export interface Citizen {
   password?: string;
   avatarUrl: string;
   titleNumber?: string;
+  bio?: string;
+  phone?: string;
+  city?: string;
   balanceCents?: number;
   createdAt?: number;
 }

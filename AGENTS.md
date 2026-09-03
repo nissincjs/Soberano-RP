@@ -9,6 +9,7 @@
 - **Layout**: Sidebar + TopNavbar + tema dark (`#090a0f` / cards `#0c0e14` / bordas `#1e222d`, acentos `emerald`). Abas controladas por `activeTab` no `BrasilSoberanoContext`.
 - **Cadastro base**: 27 UFs brasileiras em `src/data/mockInitialData.ts` (mock estático, ainda não é tabela).
 - **Carteira/PIX** (primeiro módulo de jogo): cada cidadão tem `balance_cents` (saldo em **centavos**, R$ 5.000,00 de boas-vindas gravado como depósito inicial), envia PIX por CPF/e-mail, vê extrato. Ver `WalletPage` + RPCs `wallet_get`, `wallet_find_recipient`, `pix_send`.
+- **Meu Perfil** (configurações do cidadão): edita nome, UF, cidade, telefone, bio e foto (URL ou avatares sugeridos; sem URL usa iniciais via componente `Avatar`). E-mail e CPF são read-only (credenciais/chaves PIX). Troca de senha exige a atual. Ver `ProfilePage` + RPCs `update_citizen_profile`, `change_password`. Acesso pela aba "Meu Perfil" na Sidebar ou clicando no usuário no TopNavbar.
 
 ## Stack / Infra
 
@@ -43,7 +44,7 @@ Depois de editar o banco, rode `supabase/schema.sql` no **SQL Editor** do projet
 - [x] Fundação: scaffold, auth de cidadão, layout dark, 27 UFs
 - [x] Carteira/PIX (saldo, chaves, enviar PIX, extrato)
 - [ ] Emprego / renda (primeiro trabalho do cidadão gera salário)
-- [ ] Perfil do cidadão mais completo (bio, avatar, telefone, endereço)
+- [x] Perfil do cidadão mais completo (bio, avatar, telefone, endereço)
 - [ ] Cadastro de empresas / comércio
 - [ ] Eleições e cargos (municipal/estadual/federal), partidos
 - [ ] Governo: leis, orçamento, obras, indicadores por UF
