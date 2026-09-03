@@ -14,8 +14,8 @@
 ## Stack / Infra
 
 - Repo: `github.com/nissincjs/Soberano-RP` (a pasta local é `/home/ubuntu/Soberano-RP`).
-- Banco: Supabase (Postgres). **O `schema.sql` é idempotente e é a única fonte de verdade do banco** — sempre edite o arquivo e rode ele inteiro no SQL Editor do Supabase.
-- Deploy: Docker (`Dockerfile` + `docker-compose.yml`) servindo o SPA + express. Vars em `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`, `APP_URL`).
+- Banco: Supabase (Postgres). **O `schema.sql` é idempotente e é a única fonte de verdade do banco** — sempre edite o arquivo e rode ele inteiro no SQL Editor do Supabase (DDL não roda pela anon key e **não** é aplicado automaticamente).
+- Deploy / produção: este mesmo host roda o site online em Docker (`Dockerfile` + `docker-compose.yml`, servindo o SPA + express). O site online é o container `soberano-rp-soberano-rp-1` (URL pública em `APP_URL`, porta interna 3005). Vars em `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`, `APP_URL`).
 
 ## Convenções e invariantes (NÃO quebrar)
 
@@ -24,7 +24,7 @@
 3. **Padrão Supabase**: tabelas com RLS ativada; acesso só por funções `security definer` que devolvem envelope `{ ok, error?, ... }` com erros em snake_case curtos (ex.: `saldo_insuficiente`). Cliente não acessa tabelas direto.
 4. **Módulos de UI**: cada módulo novo = um item novo na Sidebar + um case no renderizador de abas do `App.tsx` + página em `src/components/` (ex.: `<Módulo>Page.tsx`). Sem router por enquanto (abas via contexto).
 5. **Construir coisa por coisa**: o usuário valida cada módulo antes do próximo. Não pular etapas nem criar funcionalidades fora do escopo combinado.
-6. **Toda entrega é versionada no GitHub** (commit + push). Ao final de cada rodada, atualize a seção "Estado atual" deste arquivo.
+6. **Toda entrega é versionada no GitHub** (commit + push) **e publicada no site online automaticamente**: rode `docker compose up -d --build` ao final da rodada para o container de produção (`soberano-rp-soberano-rp-1`) servir a versão nova. Ao final de cada rodada, atualize a seção "Estado atual" deste arquivo.
 7. Não guardar senha em texto puro; não logar/expor segredos; não criar arquivos além do necessário.
 
 ## Como rodar
@@ -38,6 +38,12 @@ bun run build      # gera dist/ + server
 ```
 
 Depois de editar o banco, rode `supabase/schema.sql` no **SQL Editor** do projeto Supabase (não há como rodar DDL pela anon key).
+
+**Subir as mudanças para o site online (produção):**
+```bash
+docker compose up -d --build   # reconstrói e reinicia o container soberano-rp-soberano-rp-1
+```
+Rodar isso ao final de toda entrega faz as modificações aparecerem na URL pública (APP_URL). Verificar depois com `docker ps` e `curl -s http://127.0.0.1:3005/api/health`.
 
 ## Roadmap planejado (ordem sugerida)
 
