@@ -1,5 +1,5 @@
 import React from 'react';
-import { PanelLeft, LogOut, Wallet, ChevronRight } from 'lucide-react';
+import { PanelLeft, PanelLeftClose, LogOut, Wallet, ChevronRight } from 'lucide-react';
 import { useBrasilSoberano } from '../context/BrasilSoberanoContext';
 import { Avatar } from './ui/Avatar';
 import { formatBRL } from '../lib/format';
@@ -27,15 +27,19 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar, sidebarOp
           id="topbar-toggle-sidebar"
           type="button"
           onClick={onToggleSidebar}
-          className={`p-2 rounded-lg transition-all border ${
+          className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all ${
             sidebarOpen
-              ? 'text-emerald-400 bg-[#141720] border-emerald-500/40 hover:bg-[#1a1f2c]'
-              : 'text-slate-400 hover:text-white hover:bg-[#141720] border-[#1e222d]'
+              ? 'text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/15 ring-1 ring-emerald-500/25'
+              : 'text-slate-400 hover:text-white hover:bg-[#141720]'
           }`}
           title={sidebarOpen ? "Recolher Menu Lateral" : "Expandir Menu Lateral"}
           aria-label="Alternar Menu Lateral"
         >
-          <PanelLeft className="w-4 h-4" />
+          {sidebarOpen ? (
+            <PanelLeftClose className="w-4 h-4" />
+          ) : (
+            <PanelLeft className="w-4 h-4" />
+          )}
         </button>
 
         <div className="flex items-center gap-1.5">
