@@ -45,7 +45,37 @@ $$;
 -- -------------------------------------------------------------
 -- Transações financeiras (ledger) — histórico nunca é apagado
 -- from_citizen_id null = crédito vindo do sistema (ex.: depósito inicial)
+--
+-- ATENÇÃO: a tabela pode já existir de um run antigo/parcial SEM as
+-- colunas novas. Como "create table if not exists" pularia a criação,
+-- usamos a regra: se ela existir SEM from_citizen_id, recria do zero.
 -- -------------------------------------------------------------
+create table if not exists public.transactions (
+  id              uuid primary key default gen_random_uuid(),
+  from_citizen_id uuid references public.citizens(id),
+  to_citizen_id   uuid references public.citizens(id),
+  amount_cents    bigint not null check (amount_cents > 0),
+  category        text not null default 'pix',
+  description     text not null default '',
+  created_at      timestamptz not null default now(),
+  check (from_citizen_id is not null or to_citizen_id is not null)
+);
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'transactions'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'transactions'
+      and column_name = 'from_citizen_id'
+  ) then
+    drop table public.transactions;
+  end if;
+end
+$$;
+
 create table if not exists public.transactions (
   id              uuid primary key default gen_random_uuid(),
   from_citizen_id uuid references public.citizens(id),
@@ -247,7 +277,7 @@ begin
     return jsonb_build_object('ok', false, 'error', 'conta_nao_encontrada');
   end if;
 
-  select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) into v_tx
+  select coalesce(jsonb_agg(x.tx order by x.created_at desc), '[]'::jsonb) into v_tx
   from (
     select
       jsonb_build_object(
@@ -403,9 +433,10 @@ begin
       select 1 from public.transactions t
       where t.to_citizen_id = c.id and t.category = 'deposito'
     )
+      and c.balance_cents < 500000
     limit 500
   loop
-    update public.citizens set balance_cents = balance_cents + 500000 where id = r.id;
+    update public.citizens set balance_cents = 500000 where id = r.id;
     insert into public.transactions (from_citizen_id, to_citizen_id, amount_cents, category, description)
     values (null, r.id, 500000, 'deposito', 'Bônus de boas-vindas do Brasil Soberano');
   end loop;
