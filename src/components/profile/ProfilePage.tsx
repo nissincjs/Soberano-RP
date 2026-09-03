@@ -17,6 +17,7 @@ import {
 import { useBrasilSoberano } from '../../context/BrasilSoberanoContext';
 import { updateCitizenProfile, changePassword } from '../../lib/citizenApi';
 import { Avatar } from '../ui/Avatar';
+import { PageHeader } from '../ui/PageHeader';
 import { formatCpf } from '../../lib/format';
 
 const BIO_MAX = 280;
@@ -188,17 +189,11 @@ export const ProfilePage: React.FC = () => {
   return (
     <div className="w-full space-y-6 animate-fadeIn">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-3">
-            <UserRound className="w-7 h-7 text-emerald-400" />
-            <span>Meu Perfil</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Gerencie seus dados pessoais, foto e segurança da conta.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={UserRound}
+        title="Meu Perfil"
+        description="Gerencie seus dados pessoais, foto e segurança da conta."
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Coluna principal: edição */}

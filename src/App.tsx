@@ -64,7 +64,11 @@ const DashboardContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="relative min-h-screen bg-[#090a0f] text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white overflow-x-clip">
+      {/* Ambient background decor */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-aurora" />
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-0 bg-gridlines" />
+
       {/* 1. Sleek Sidebar */}
       <Sidebar
         isOpen={sidebarOpen}
@@ -72,7 +76,7 @@ const DashboardContent: React.FC = () => {
       />
 
       {/* Main App Layout (offset left by sidebar on desktop when open) */}
-      <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${sidebarOpen ? 'lg:pl-64' : 'pl-0'}`}>
+      <div className={`relative z-10 flex flex-col min-h-screen transition-all duration-300 ease-in-out ${sidebarOpen ? 'lg:pl-64' : 'pl-0'}`}>
         {/* 2. Top Header Bar */}
         <TopNavbar
           sidebarOpen={sidebarOpen}

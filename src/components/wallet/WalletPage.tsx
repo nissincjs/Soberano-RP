@@ -17,6 +17,7 @@ import {
 import { useBrasilSoberano } from '../../context/BrasilSoberanoContext';
 import { getWallet, findPixRecipient, sendPix } from '../../lib/citizenApi';
 import { Avatar } from '../ui/Avatar';
+import { PageHeader } from '../ui/PageHeader';
 import type { WalletTransaction, PixRecipient } from '../../types';
 import {
   formatBRL,
@@ -174,26 +175,26 @@ export const WalletPage: React.FC = () => {
   return (
     <div className="w-full space-y-6 animate-fadeIn">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-3">
-            <Wallet className="w-7 h-7 text-emerald-400" />
-            <span>Carteira Soberana</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+      <PageHeader
+        icon={Wallet}
+        title="Carteira Soberana"
+        description={
+          <>
             Saldo, chaves PIX e movimentações de{' '}
             <span className="text-slate-200 font-semibold">{citizen.name}</span>.
-          </p>
-        </div>
-        <button
-          onClick={loadWallet}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-slate-300 bg-[#141720] border border-[#1e222d] hover:text-white hover:border-slate-500/40 transition-all disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
-      </div>
+          </>
+        }
+        actions={
+          <button
+            onClick={loadWallet}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-slate-300 bg-[#141720] border border-[#1e222d] hover:text-white hover:border-slate-500/40 transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
+        }
+      />
 
       {/* Saldo + Chaves */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
