@@ -1,0 +1,6 @@
+{
+  "name": "Brasil Soberano RP",
+  "description": "Plataforma de Roleplay e Simulação Governamental do Brasil Soberano",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
