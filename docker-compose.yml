@@ -1,0 +1,11 @@
+services:
+  soberano-rp:
+    build:
+      context: .
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    image: soberano-rp:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3005:3000"

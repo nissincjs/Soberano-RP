@@ -9,7 +9,32 @@ export interface Citizen {
   password?: string;
   avatarUrl: string;
   titleNumber?: string;
+  balanceCents?: number;
   createdAt?: number;
+}
+
+export type TransactionDirection = 'in' | 'out';
+export type PixKeyType = 'cpf' | 'email';
+
+export interface WalletTransaction {
+  id: string;
+  direction: TransactionDirection;
+  amountCents: number;
+  category: string;
+  description: string;
+  counterpartyName: string;
+  createdAt: number;
+}
+
+export interface WalletData {
+  balanceCents: number;
+  transactions: WalletTransaction[];
+}
+
+export interface PixRecipient {
+  name: string;
+  state: string;
+  keyType: PixKeyType;
 }
 
 export interface BrazilianStateRP {

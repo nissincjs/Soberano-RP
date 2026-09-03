@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Citizen, BrazilianStateRP } from '../types';
 import { INITIAL_CITIZEN, INITIAL_STATES } from '../data/mockInitialData';
+import {
+  registerCitizen as apiRegister,
+  loginCitizen as apiLogin,
+  fetchCitizen as apiFetchCitizen,
+} from '../lib/citizenApi';
+import type { CitizenEnvelope } from '../lib/citizenApi';
 
 interface ToastInfo {
   message: string;
@@ -34,30 +40,78 @@ interface BrasilSoberanoContextType {
 const BrasilSoberanoContext = createContext<BrasilSoberanoContextType | undefined>(undefined);
 
 const CITIZEN_STORAGE_KEY = 'brasil_soberano_active_user';
-const USERS_DB_STORAGE_KEY = 'brasil_soberano_registered_users';
+const AUTH_STORAGE_KEY = 'brasil_soberano_auth';
+
+// Conta demo semeadas pelo schema.sql (login rápido "Gov.br").
+const DEMO_EMAIL = 'cidadao@brasilsoberano.gov.br';
+const DEMO_PASSWORD = 'cidadao123';
+
+function readStoredCitizen(): Citizen {
+  try {
+    const saved = localStorage.getItem(CITIZEN_STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.error('Error loading stored citizen:', e);
+  }
+  return INITIAL_CITIZEN;
+}
+
+function readStoredAuth(): boolean {
+  try {
+    return localStorage.getItem(AUTH_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistSession(citizen: Citizen) {
+  try {
+    localStorage.setItem(AUTH_STORAGE_KEY, 'true');
+    localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(citizen));
+  } catch (e) {
+    console.error('Error persisting session:', e);
+  }
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(CITIZEN_STORAGE_KEY);
+  } catch (e) {
+    console.error('Error clearing session:', e);
+  }
+}
+
+function friendlyError(error?: string): string {
+  switch (error) {
+    case 'email_ja_cadastrado':
+      return 'Já existe uma conta cadastrada com este e-mail.';
+    case 'cpf_ja_cadastrado':
+      return 'Já existe um cidadão cadastrado com este CPF.';
+    case 'credenciais_invalidas':
+      return 'E-mail/CPF ou senha inválidos.';
+    case 'nome_obrigatorio':
+      return 'Informe seu nome completo.';
+    case 'senha_curta':
+      return 'A senha deve ter ao menos 4 caracteres.';
+    case 'nao_encontrado':
+      return 'Cidadão não encontrado.';
+    default:
+      return 'Não foi possível acessar o banco de dados. Verifique a configuração do Supabase.';
+  }
+}
+
+function applyLoginResult(envelope: CitizenEnvelope): Citizen | null {
+  if (envelope.ok && envelope.citizen) return envelope.citizen;
+  return null;
+}
 
 export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [citizen, setCitizen] = useState<Citizen>(() => {
-    try {
-      const saved = localStorage.getItem(CITIZEN_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error('Error loading stored citizen:', e);
-    }
-    return INITIAL_CITIZEN;
-  });
-
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('brasil_soberano_auth') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  const [authLoading, setAuthLoading] = useState<boolean>(false);
+  const [citizen, setCitizen] = useState<Citizen>(readStoredCitizen);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(readStoredAuth);
+  const [authLoading, setAuthLoading] = useState<boolean>(readStoredAuth);
   const [toastMessage, setToastMessage] = useState<ToastInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>('wallet');
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToastMessage({ message, type });
@@ -78,134 +132,104 @@ export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ chil
     });
   };
 
+  // Revalida a sessão salva no navegador contra o Supabase ao carregar a página.
+  useEffect(() => {
+    let cancelled = false;
+
+    const rehydrate = async () => {
+      if (!readStoredAuth()) {
+        if (!cancelled) setAuthLoading(false);
+        return;
+      }
+
+      const storedId = readStoredCitizen().id;
+      if (!storedId) {
+        if (!cancelled) setAuthLoading(false);
+        return;
+      }
+
+      const result = await apiFetchCitizen(storedId);
+      if (cancelled) return;
+
+      if (result.ok && result.citizen) {
+        setCitizen(result.citizen);
+        try {
+          localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(result.citizen));
+        } catch (e) {
+          console.error('Error saving citizen:', e);
+        }
+      } else if (result.error === 'nao_encontrado') {
+        clearSession();
+        setIsAuthenticated(false);
+      }
+      setAuthLoading(false);
+    };
+
+    rehydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const login = async (identifier?: string, password?: string): Promise<boolean> => {
     setAuthLoading(true);
-    await new Promise(r => setTimeout(r, 400));
 
-    // Fast-track demo login if no credentials passed (e.g. Gov.br click)
+    let result: CitizenEnvelope;
+
+    // Login rápido "Gov.br": entra na conta demo criada pelo schema.sql.
     if (!identifier) {
-      const user = citizen.name ? citizen : INITIAL_CITIZEN;
-      setCitizen(user);
-      setIsAuthenticated(true);
-      localStorage.setItem('brasil_soberano_auth', 'true');
-      localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(user));
-      setAuthLoading(false);
-      showToast(`Bem-vindo(a) ao terminal, ${user.name}!`, 'success');
-      return true;
+      result = await apiLogin(DEMO_EMAIL, DEMO_PASSWORD);
+    } else {
+      result = await apiLogin(identifier.trim(), password ?? '');
     }
 
-    const cleanId = identifier.trim().toLowerCase();
-    const cleanCpf = cleanId.replace(/\D/g, '');
-
-    try {
-      const rawUsers = localStorage.getItem(USERS_DB_STORAGE_KEY);
-      const registeredUsers: Citizen[] = rawUsers ? JSON.parse(rawUsers) : [];
-
-      // Find user by email or CPF
-      const foundUser = registeredUsers.find(u => {
-        const uEmail = (u.email || '').toLowerCase();
-        const uCpf = (u.cpf || '').replace(/\D/g, '');
-        return uEmail === cleanId || (cleanCpf && uCpf === cleanCpf);
-      });
-
-      if (foundUser) {
-        if (password && foundUser.password && foundUser.password !== password) {
-          setAuthLoading(false);
-          showToast('Senha incorreta para o usuário informado.', 'error');
-          return false;
-        }
-        setCitizen(foundUser);
-        setIsAuthenticated(true);
-        localStorage.setItem('brasil_soberano_auth', 'true');
-        localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(foundUser));
-        setAuthLoading(false);
-        showToast(`Sessão iniciada com sucesso! Bem-vindo(a), ${foundUser.name}.`, 'success');
-        return true;
-      }
-
-      // If matching the default demo citizen
-      const demoCpf = INITIAL_CITIZEN.cpf.replace(/\D/g, '');
-      const demoEmail = (INITIAL_CITIZEN.email || '').toLowerCase();
-      if (cleanId === demoEmail || (cleanCpf && cleanCpf === demoCpf)) {
-        setCitizen(INITIAL_CITIZEN);
-        setIsAuthenticated(true);
-        localStorage.setItem('brasil_soberano_auth', 'true');
-        localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(INITIAL_CITIZEN));
-        setAuthLoading(false);
-        showToast(`Acesso concedido. Bem-vindo(a), ${INITIAL_CITIZEN.name}.`, 'success');
-        return true;
-      }
-
-      // Default fallback: create session for this identifier
-      const autoUser: Citizen = {
-        id: `cit-${Date.now()}`,
-        name: identifier.split('@')[0] || 'Cidadão',
-        cpf: identifier.includes('@') ? '000.000.000-00' : identifier,
-        role: 'Cidadão',
-        state: 'DF',
-        email: identifier.includes('@') ? identifier : undefined,
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-        createdAt: Date.now()
-      };
-
-      setCitizen(autoUser);
-      setIsAuthenticated(true);
-      localStorage.setItem('brasil_soberano_auth', 'true');
-      localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(autoUser));
+    const loggedCitizen = applyLoginResult(result);
+    if (!loggedCitizen) {
       setAuthLoading(false);
-      showToast(`Bem-vindo(a), ${autoUser.name}!`, 'success');
-      return true;
-    } catch (err) {
-      console.error('Login error:', err);
-      setAuthLoading(false);
-      showToast('Falha ao processar login.', 'error');
+      showToast(friendlyError(result.error), 'error');
       return false;
     }
+
+    setCitizen(loggedCitizen);
+    setIsAuthenticated(true);
+    persistSession(loggedCitizen);
+    setAuthLoading(false);
+    showToast(`Bem-vindo(a) ao terminal, ${loggedCitizen.name}!`, 'success');
+    return true;
   };
 
   const registerCitizen = async (data: RegisterCitizenPayload): Promise<boolean> => {
     setAuthLoading(true);
-    await new Promise(r => setTimeout(r, 400));
 
-    try {
-      const newCitizen: Citizen = {
-        id: `cit-${Date.now()}`,
-        name: data.name.trim(),
-        email: data.email.trim(),
-        cpf: data.cpf.trim(),
-        state: data.state || 'DF',
-        role: 'Cidadão',
-        party: data.party || 'Sem Partido',
-        password: data.password,
-        avatarUrl: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 1000)}?auto=format&fit=crop&w=300&q=80`,
-        titleNumber: String(Math.floor(1000000000 + Math.random() * 9000000000)),
-        createdAt: Date.now()
-      };
+    const result = await apiRegister({
+      name: data.name.trim(),
+      email: data.email.trim(),
+      cpf: data.cpf.trim(),
+      state: data.state || 'DF',
+      party: data.party || 'Sem Partido',
+      password: data.password,
+      avatarUrl: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 1000)}?auto=format&fit=crop&w=300&q=80`,
+      titleNumber: String(Math.floor(1000000000 + Math.random() * 9000000000)),
+    });
 
-      const rawUsers = localStorage.getItem(USERS_DB_STORAGE_KEY);
-      const registeredUsers: Citizen[] = rawUsers ? JSON.parse(rawUsers) : [];
-      registeredUsers.push(newCitizen);
-      localStorage.setItem(USERS_DB_STORAGE_KEY, JSON.stringify(registeredUsers));
-
-      setCitizen(newCitizen);
-      setIsAuthenticated(true);
-      localStorage.setItem('brasil_soberano_auth', 'true');
-      localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(newCitizen));
-
+    const newCitizen = applyLoginResult(result);
+    if (!newCitizen) {
       setAuthLoading(false);
-      showToast(`Cadastro realizado com sucesso! Bem-vindo(a), ${newCitizen.name}.`, 'success');
-      return true;
-    } catch (err) {
-      console.error('Register error:', err);
-      setAuthLoading(false);
-      showToast('Erro ao realizar cadastro.', 'error');
+      showToast(friendlyError(result.error), 'error');
       return false;
     }
+
+    setCitizen(newCitizen);
+    setIsAuthenticated(true);
+    persistSession(newCitizen);
+    setAuthLoading(false);
+    showToast(`Cadastro realizado com sucesso! Bem-vindo(a), ${newCitizen.name}.`, 'success');
+    return true;
   };
 
   const logout = () => {
+    clearSession();
     setIsAuthenticated(false);
-    localStorage.removeItem('brasil_soberano_auth');
     showToast('Sessão encerrada com sucesso.', 'info');
   };
 
