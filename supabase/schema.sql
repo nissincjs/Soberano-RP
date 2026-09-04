@@ -495,11 +495,12 @@ begin
   v_title := lpad(floor(random() * 10000000000)::bigint::text, 10, '0');
 
   begin
-    insert into public.citizens (id, name, email, role, state, party, avatar_url, title_number, balance_cents)
+    insert into public.citizens (id, name, email, cpf, role, state, party, avatar_url, title_number, balance_cents)
     values (
       auth.uid(),
       left(v_name, 120),
       lower(trim(v_email)),
+      v_cpf,
       'Cidadão',
       v_state,
       'Sem Partido',
