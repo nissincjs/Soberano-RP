@@ -3,16 +3,49 @@ import { BrasilSoberanoProvider, useBrasilSoberano } from './context/BrasilSober
 import { Sidebar } from './components/Sidebar';
 import { TopNavbar } from './components/TopNavbar';
 import { LoginPage } from './components/auth/LoginPage';
+import { ResetPasswordView } from './components/auth/ResetPasswordView';
 import { ExecutiveDashboard } from './components/dashboard/ExecutiveDashboard';
 import { WalletPage } from './components/wallet/WalletPage';
 import { ProfilePage } from './components/profile/ProfilePage';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+
+const Toast: React.FC<{ message: { text: string; type: 'success' | 'error' | 'info' } }> = ({ message }) => (
+  <div className="fixed bottom-6 right-6 z-50 animate-fadeIn">
+    <div className={`px-4 py-3 rounded-xl shadow-2xl font-bold text-xs flex items-center gap-2.5 border backdrop-blur-xl ${
+      message.type === 'error'
+        ? 'bg-rose-950/90 border-rose-500/50 text-rose-200'
+        : message.type === 'info'
+        ? 'bg-cyan-950/90 border-cyan-500/50 text-cyan-200'
+        : 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200'
+    }`}>
+      {message.type === 'error' ? (
+        <AlertCircle className="w-4 h-4 text-rose-400" />
+      ) : message.type === 'info' ? (
+        <Info className="w-4 h-4 text-cyan-400" />
+      ) : (
+        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+      )}
+      <span>{message.text}</span>
+    </div>
+  </div>
+);
+
+const AuthScaffold: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { toastMessage } = useBrasilSoberano();
+  return (
+    <>
+      {children}
+      {toastMessage && <Toast message={toastMessage} />}
+    </>
+  );
+};
 
 const DashboardContent: React.FC = () => {
   const {
     toastMessage,
     isAuthenticated,
     authLoading,
+    pendingPasswordReset,
     activeTab
   } = useBrasilSoberano();
 
@@ -32,34 +65,21 @@ const DashboardContent: React.FC = () => {
     );
   }
 
+  // Link de redefinição de senha validado: mostra a tela para definir a nova senha.
+  if (pendingPasswordReset) {
+    return (
+      <AuthScaffold>
+        <ResetPasswordView />
+      </AuthScaffold>
+    );
+  }
+
   // If citizen is not logged in, render the login & onboarding portal
   if (!isAuthenticated) {
     return (
-      <>
+      <AuthScaffold>
         <LoginPage />
-
-        {/* Global Toast Alert */}
-        {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 animate-fadeIn">
-            <div className={`px-4 py-3 rounded-xl shadow-2xl font-bold text-xs flex items-center gap-2.5 border backdrop-blur-xl ${
-              toastMessage.type === 'error'
-                ? 'bg-rose-950/90 border-rose-500/50 text-rose-200'
-                : toastMessage.type === 'info'
-                ? 'bg-cyan-950/90 border-cyan-500/50 text-cyan-200'
-                : 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200'
-            }`}>
-              {toastMessage.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 text-rose-400" />
-              ) : toastMessage.type === 'info' ? (
-                <Info className="w-4 h-4 text-cyan-400" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              )}
-              <span>{toastMessage.text}</span>
-            </div>
-          </div>
-        )}
-      </>
+      </AuthScaffold>
     );
   }
 
@@ -99,26 +119,7 @@ const DashboardContent: React.FC = () => {
       </div>
 
       {/* Global Toast Alert */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 animate-fadeIn">
-          <div className={`px-4 py-3 rounded-xl shadow-2xl font-bold text-xs flex items-center gap-2.5 border backdrop-blur-xl ${
-            toastMessage.type === 'error'
-              ? 'bg-rose-950/90 border-rose-500/50 text-rose-200'
-              : toastMessage.type === 'info'
-              ? 'bg-cyan-950/90 border-cyan-500/50 text-cyan-200'
-              : 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200'
-          }`}>
-            {toastMessage.type === 'error' ? (
-              <AlertCircle className="w-4 h-4 text-rose-400" />
-            ) : toastMessage.type === 'info' ? (
-              <Info className="w-4 h-4 text-cyan-400" />
-            ) : (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            )}
-            <span>{toastMessage.text}</span>
-          </div>
-        </div>
-      )}
+      {toastMessage && <Toast message={toastMessage} />}
     </div>
   );
 };
@@ -130,4 +131,3 @@ export default function App() {
     </BrasilSoberanoProvider>
   );
 }
-

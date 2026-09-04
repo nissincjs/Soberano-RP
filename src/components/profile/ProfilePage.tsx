@@ -15,9 +15,10 @@ import {
   BadgeCheck,
 } from 'lucide-react';
 import { useBrasilSoberano } from '../../context/BrasilSoberanoContext';
-import { updateCitizenProfile, changePassword } from '../../lib/citizenApi';
+import { updateCitizenProfile, changeAuthPassword } from '../../lib/citizenApi';
 import { Avatar } from '../ui/Avatar';
 import { PageHeader } from '../ui/PageHeader';
+import { GoogleIcon } from '../ui/sign-in';
 import { formatCpf } from '../../lib/format';
 
 const BIO_MAX = 280;
@@ -49,7 +50,9 @@ function passwordError(error?: string): string {
     case 'senha_incorreta':
       return 'Senha atual incorreta. Verifique e tente novamente.';
     case 'senha_curta':
-      return 'A nova senha deve ter ao menos 4 caracteres.';
+      return 'A nova senha deve ter ao menos 6 caracteres.';
+    case 'senha_igual':
+      return 'A nova senha deve ser diferente da atual.';
     case 'nao_encontrado':
       return 'Não foi possível localizar a sua conta.';
     case 'rede':
@@ -66,7 +69,7 @@ const labelClass =
   'block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5';
 
 export const ProfilePage: React.FC = () => {
-  const { citizen, updateCitizen, showToast, states } = useBrasilSoberano();
+  const { citizen, updateCitizen, showToast, states, authProvider, authEmail } = useBrasilSoberano();
 
   const [name, setName] = useState(citizen.name ?? '');
   const [phone, setPhone] = useState(citizen.phone ?? '');
@@ -149,8 +152,8 @@ export const ProfilePage: React.FC = () => {
       setPwError('Informe sua senha atual.');
       return;
     }
-    if (newPassword.length < 4) {
-      setPwError('A nova senha deve ter ao menos 4 caracteres.');
+    if (newPassword.length < 6) {
+      setPwError('A nova senha deve ter ao menos 6 caracteres.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -160,8 +163,8 @@ export const ProfilePage: React.FC = () => {
     setPwError(null);
     setChangingPw(true);
 
-    const result = await changePassword({
-      id: citizen.id,
+    const result = await changeAuthPassword({
+      email: authEmail ?? citizen.email ?? '',
       currentPassword,
       newPassword,
     });
@@ -423,7 +426,7 @@ export const ProfilePage: React.FC = () => {
             </dl>
             <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-500 border-t border-[#1e222d] pt-3.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              CPF e e-mail são suas chaves PIX e credenciais de acesso — por isso não podem ser alterados.
+              CPF e e-mail são suas chaves PIX e identificação — por isso não podem ser alterados.
             </div>
           </div>
 
@@ -432,7 +435,16 @@ export const ProfilePage: React.FC = () => {
               <Lock className="w-4 h-4 text-emerald-400" />
               Segurança
             </div>
-            <div className="space-y-4">
+            {authProvider === 'google' ? (
+              <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <GoogleIcon />
+                <div className="text-[11px] leading-relaxed text-slate-400">
+                  <p className="text-slate-200 font-bold text-xs mb-0.5">Conta conectada via Google</p>
+                  O acesso é feito pela sua conta Google. Não há senha cadastrada para este terminal.
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
               <div>
                 <label className={labelClass}>Senha atual</label>
                 <input
@@ -449,7 +461,7 @@ export const ProfilePage: React.FC = () => {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 4 caracteres"
+                  placeholder="Mínimo 6 caracteres"
                   className={inputClass}
                 />
               </div>
@@ -494,7 +506,9 @@ export const ProfilePage: React.FC = () => {
                   </>
                 )}
               </button>
-            </div>
+              </div>
+              )
+            }
           </div>
         </div>
       </div>

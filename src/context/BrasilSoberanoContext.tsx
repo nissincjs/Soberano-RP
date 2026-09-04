@@ -1,12 +1,19 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Citizen, BrazilianStateRP } from '../types';
-import { INITIAL_CITIZEN, INITIAL_STATES } from '../data/mockInitialData';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import type { Citizen, BrazilianStateRP } from '../types';
+import { INITIAL_STATES } from '../data/mockInitialData';
+import { supabase } from '../lib/supabase';
 import {
-  registerCitizen as apiRegister,
-  loginCitizen as apiLogin,
-  fetchCitizen as apiFetchCitizen,
+  signUpWithPassword,
+  signInWithPassword as apiSignIn,
+  signInWithGoogle,
+  resendConfirmationEmail,
+  sendPasswordReset,
+  completePasswordReset,
+  signOut as apiSignOut,
+  getAuthUserInfo,
+  finalizeCitizen,
+  getMyCitizen,
 } from '../lib/citizenApi';
-import type { CitizenEnvelope } from '../lib/citizenApi';
 
 interface ToastInfo {
   message: string;
@@ -18,18 +25,27 @@ interface RegisterCitizenPayload {
   email: string;
   cpf: string;
   state: string;
-  party?: string;
-  password?: string;
+  password: string;
 }
 
+type AuthProvider = 'email' | 'google';
+
 interface BrasilSoberanoContextType {
-  citizen: Citizen;
+  citizen: Citizen | null;
   updateCitizen: (updates: Partial<Citizen>) => void;
   isAuthenticated: boolean;
   authLoading: boolean;
-  login: (identifier?: string, password?: string) => Promise<boolean>;
-  registerCitizen: (data: RegisterCitizenPayload) => Promise<boolean>;
-  logout: () => void;
+  authProvider: AuthProvider | null;
+  authEmail: string | null;
+  pendingPasswordReset: boolean;
+  login: (email: string, password: string) => Promise<'ok' | 'email_nao_confirmado' | 'error'>;
+  loginWithGoogle: () => Promise<boolean>;
+  registerCitizen: (data: RegisterCitizenPayload) => Promise<'ok' | 'email_nao_confirmado' | 'error'>;
+  resendConfirmation: (email: string) => Promise<boolean>;
+  requestPasswordReset: (email: string) => Promise<boolean>;
+  submitPasswordReset: (newPassword: string) => Promise<boolean>;
+  cancelPasswordReset: () => void;
+  logout: () => Promise<void>;
   states: BrazilianStateRP[];
   toastMessage: ToastInfo | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -39,79 +55,44 @@ interface BrasilSoberanoContextType {
 
 const BrasilSoberanoContext = createContext<BrasilSoberanoContextType | undefined>(undefined);
 
-const CITIZEN_STORAGE_KEY = 'brasil_soberano_active_user';
-const AUTH_STORAGE_KEY = 'brasil_soberano_auth';
-
-// Conta demo semeadas pelo schema.sql (login rápido "Gov.br").
-const DEMO_EMAIL = 'cidadao@brasilsoberano.gov.br';
-const DEMO_PASSWORD = 'cidadao123';
-
-function readStoredCitizen(): Citizen {
-  try {
-    const saved = localStorage.getItem(CITIZEN_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch (e) {
-    console.error('Error loading stored citizen:', e);
-  }
-  return INITIAL_CITIZEN;
-}
-
-function readStoredAuth(): boolean {
-  try {
-    return localStorage.getItem(AUTH_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function persistSession(citizen: Citizen) {
-  try {
-    localStorage.setItem(AUTH_STORAGE_KEY, 'true');
-    localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(citizen));
-  } catch (e) {
-    console.error('Error persisting session:', e);
-  }
-}
-
-function clearSession() {
-  try {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    localStorage.removeItem(CITIZEN_STORAGE_KEY);
-  } catch (e) {
-    console.error('Error clearing session:', e);
-  }
-}
-
 function friendlyError(error?: string): string {
   switch (error) {
+    case 'email_nao_confirmado':
+      return 'Confirme seu e-mail antes de entrar. Enviamos um link de ativação.';
     case 'email_ja_cadastrado':
       return 'Já existe uma conta cadastrada com este e-mail.';
     case 'cpf_ja_cadastrado':
       return 'Já existe um cidadão cadastrado com este CPF.';
+    case 'cpf_invalido':
+      return 'CPF inválido. Confira os dígitos.';
     case 'credenciais_invalidas':
-      return 'E-mail/CPF ou senha inválidos.';
-    case 'nome_obrigatorio':
-      return 'Informe seu nome completo.';
-    case 'senha_curta':
-      return 'A senha deve ter ao menos 4 caracteres.';
     case 'senha_incorreta':
-      return 'Senha atual incorreta. Verifique e tente novamente.';
+      return 'E-mail ou senha inválidos.';
+    case 'senha_curta':
+      return 'A senha deve ter ao menos 6 caracteres.';
+    case 'senha_igual':
+      return 'A nova senha deve ser diferente da atual.';
+    case 'muitas_tentativas':
+      return 'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
+    case 'erro_envio_email':
+      return 'Não foi possível enviar o e-mail. Tente novamente mais tarde.';
     case 'nao_encontrado':
-      return 'Cidadão não encontrado.';
+    case 'nao_autenticado':
+      return 'Sessão não encontrada. Faça login novamente.';
+    case 'conta_ja_existente':
+      return 'Esta conta já foi cadastrada. Tente entrar normalmente.';
     default:
-      return 'Não foi possível acessar o banco de dados. Verifique a configuração do Supabase.';
+      return 'Não foi possível acessar o servidor. Verifique sua conexão e tente novamente.';
   }
 }
 
-function applyLoginResult(envelope: CitizenEnvelope): Citizen | null {
-  if (envelope.ok && envelope.citizen) return envelope.citizen;
-  return null;
-}
-
 export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [citizen, setCitizen] = useState<Citizen>(readStoredCitizen);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(readStoredAuth);
-  const [authLoading, setAuthLoading] = useState<boolean>(readStoredAuth);
+  const [citizen, setCitizen] = useState<Citizen | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [authProvider, setAuthProvider] = useState<AuthProvider | null>(null);
+  const [authEmail, setAuthEmail] = useState<string | null>(null);
+  const [pendingPasswordReset, setPendingPasswordReset] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<ToastInfo | null>(null);
   const [activeTab, setActiveTab] = useState<string>('wallet');
 
@@ -123,115 +104,208 @@ export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ chil
   };
 
   const updateCitizen = (updates: Partial<Citizen>) => {
-    setCitizen(prev => {
-      const updated = { ...prev, ...updates };
-      try {
-        localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(updated));
-      } catch (e) {
-        console.error('Error saving citizen:', e);
-      }
-      return updated;
-    });
+    setCitizen(prev => (prev ? { ...prev, ...updates } : prev));
   };
 
-  // Revalida a sessão salva no navegador contra o Supabase ao carregar a página.
+  const hydrateRef = useRef<Promise<boolean> | null>(null);
+
+  const runHydrate = async (): Promise<boolean> => {
+    const info = await getAuthUserInfo();
+    if (!info) {
+      setCitizen(null);
+      setIsAuthenticated(false);
+      setAuthProvider(null);
+      setAuthEmail(null);
+      return false;
+    }
+    setAuthProvider(info.provider);
+    setAuthEmail(info.email);
+
+    const finalize = await finalizeCitizen();
+    if (finalize.ok && finalize.citizen) {
+      setCitizen(finalize.citizen);
+      setIsAuthenticated(true);
+      return true;
+    }
+
+    const mine = await getMyCitizen();
+    if (mine.ok && mine.citizen) {
+      setCitizen(mine.citizen);
+      setIsAuthenticated(true);
+      return true;
+    }
+
+    setIsAuthenticated(false);
+    return false;
+  };
+
+  // Deduplica hidratações concorrentes (ex.: SIGNED_IN + getSession no boot).
+  const hydrateSession = (): Promise<boolean> => {
+    if (!hydrateRef.current) {
+      hydrateRef.current = runHydrate().finally(() => {
+        hydrateRef.current = null;
+      });
+    }
+    return hydrateRef.current;
+  };
+
+  // Boot: sessão existente no navegador (ou token recebido pelo link de
+  // confirmação de e-mail / reset de senha na própria URL).
   useEffect(() => {
     let cancelled = false;
 
-    const rehydrate = async () => {
-      if (!readStoredAuth()) {
-        if (!cancelled) setAuthLoading(false);
-        return;
-      }
-
-      const storedId = readStoredCitizen().id;
-      if (!storedId) {
-        if (!cancelled) setAuthLoading(false);
-        return;
-      }
-
-      const result = await apiFetchCitizen(storedId);
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
 
-      if (result.ok && result.citizen) {
-        setCitizen(result.citizen);
-        try {
-          localStorage.setItem(CITIZEN_STORAGE_KEY, JSON.stringify(result.citizen));
-        } catch (e) {
-          console.error('Error saving citizen:', e);
-        }
-      } else if (result.error === 'nao_encontrado') {
-        clearSession();
+      if (event === 'SIGNED_OUT') {
+        setCitizen(null);
         setIsAuthenticated(false);
+        setAuthProvider(null);
+        setAuthEmail(null);
+        setPendingPasswordReset(false);
+        setAuthLoading(false);
+        return;
       }
-      setAuthLoading(false);
-    };
 
-    rehydrate();
+      if (event === 'PASSWORD_RECOVERY') {
+        setPendingPasswordReset(true);
+        setIsAuthenticated(true);
+        setAuthLoading(false);
+        return;
+      }
+
+      // Login novo (formulário), confirmação de e-mail ou retorno do Google:
+      // o token vem na URL e o Supabase emite SIGNED_IN.
+      if (event === 'SIGNED_IN' && session) {
+        setAuthLoading(true);
+        hydrateSession().finally(() => {
+          if (!cancelled) setAuthLoading(false);
+        });
+        return;
+      }
+
+      // Sessão existente encontrada (sem token novo na URL): a revalidação
+      // fica por conta do getSession() abaixo para evitar hidratação dupla.
+      if (event === 'INITIAL_SESSION' && !session) {
+        if (!cancelled) setAuthLoading(false);
+      }
+    });
+
+    // Sessão já armazenada no navegador (reload): revalida o cidadão.
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      if (data.session) {
+        setAuthLoading(true);
+        hydrateSession().finally(() => {
+          if (!cancelled) setAuthLoading(false);
+        });
+      } else {
+        setAuthLoading(false);
+      }
+    });
+
     return () => {
       cancelled = true;
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
-  const login = async (identifier?: string, password?: string): Promise<boolean> => {
-    setAuthLoading(true);
-
-    let result: CitizenEnvelope;
-
-    // Login rápido "Gov.br": entra na conta demo criada pelo schema.sql.
-    if (!identifier) {
-      result = await apiLogin(DEMO_EMAIL, DEMO_PASSWORD);
-    } else {
-      result = await apiLogin(identifier.trim(), password ?? '');
+  const login = async (
+    email: string,
+    password: string
+  ): Promise<'ok' | 'email_nao_confirmado' | 'error'> => {
+    const result = await apiSignIn(email, password);
+    if (!result.ok) {
+      if (result.error === 'email_nao_confirmado') {
+        showToast('E-mail ainda não confirmado. Enviamos um novo link de ativação.', 'info');
+        return 'email_nao_confirmado';
+      }
+      showToast(friendlyError(result.error), 'error');
+      return 'error';
     }
+    // Aguarda a re-hidratação (evento SIGNED_IN cria/carrega o cidadão).
+    setAuthLoading(true);
+    return 'ok';
+  };
 
-    const loggedCitizen = applyLoginResult(result);
-    if (!loggedCitizen) {
-      setAuthLoading(false);
+  const loginWithGoogle = async (): Promise<boolean> => {
+    const result = await signInWithGoogle();
+    if (!result.ok) {
       showToast(friendlyError(result.error), 'error');
       return false;
     }
-
-    setCitizen(loggedCitizen);
-    setIsAuthenticated(true);
-    persistSession(loggedCitizen);
-    setAuthLoading(false);
-    showToast(`Bem-vindo(a) ao terminal, ${loggedCitizen.name}!`, 'success');
     return true;
   };
 
-  const registerCitizen = async (data: RegisterCitizenPayload): Promise<boolean> => {
+  const registerCitizen = async (
+    data: RegisterCitizenPayload
+  ): Promise<'ok' | 'email_nao_confirmado' | 'error'> => {
+    const result = await signUpWithPassword(data);
+    if (!result.ok) {
+      showToast(friendlyError(result.error), 'error');
+      return 'error';
+    }
+
+    // Com "Confirm email" ativo o Supabase não abre sessão: o fluxo segue
+    // pela tela de confirmação até o jogador clicar no link recebido.
+    const user = await getAuthUserInfo();
+    if (!user) {
+      return 'email_nao_confirmado';
+    }
+
     setAuthLoading(true);
+    await hydrateSession();
+    setAuthLoading(false);
+    showToast('Cadastro realizado com sucesso!', 'success');
+    return 'ok';
+  };
 
-    const result = await apiRegister({
-      name: data.name.trim(),
-      email: data.email.trim(),
-      cpf: data.cpf.trim(),
-      state: data.state || 'DF',
-      party: data.party || 'Sem Partido',
-      password: data.password,
-      avatarUrl: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 1000)}?auto=format&fit=crop&w=300&q=80`,
-      titleNumber: String(Math.floor(1000000000 + Math.random() * 9000000000)),
-    });
-
-    const newCitizen = applyLoginResult(result);
-    if (!newCitizen) {
-      setAuthLoading(false);
+  const resendConfirmation = async (email: string): Promise<boolean> => {
+    const result = await resendConfirmationEmail(email);
+    if (!result.ok) {
       showToast(friendlyError(result.error), 'error');
       return false;
     }
-
-    setCitizen(newCitizen);
-    setIsAuthenticated(true);
-    persistSession(newCitizen);
-    setAuthLoading(false);
-    showToast(`Cadastro realizado com sucesso! Bem-vindo(a), ${newCitizen.name}.`, 'success');
+    showToast('Novo link de confirmação enviado!', 'success');
     return true;
   };
 
-  const logout = () => {
-    clearSession();
+  const requestPasswordReset = async (email: string): Promise<boolean> => {
+    const result = await sendPasswordReset(email);
+    if (!result.ok) {
+      showToast(friendlyError(result.error), 'error');
+      return false;
+    }
+    showToast('Enviamos um link de redefinição de senha para o seu e-mail.', 'success');
+    return true;
+  };
+
+  const submitPasswordReset = async (newPassword: string): Promise<boolean> => {
+    const result = await completePasswordReset(newPassword);
+    if (!result.ok) {
+      showToast(friendlyError(result.error), 'error');
+      return false;
+    }
+    setPendingPasswordReset(false);
+    setAuthLoading(true);
+    await hydrateSession();
+    setAuthLoading(false);
+    showToast('Senha redefinida com sucesso!', 'success');
+    return true;
+  };
+
+  const cancelPasswordReset = () => {
+    setPendingPasswordReset(false);
+    setAuthLoading(false);
+  };
+
+  const logout = async () => {
+    await apiSignOut();
+    setCitizen(null);
     setIsAuthenticated(false);
+    setAuthProvider(null);
+    setAuthEmail(null);
+    setPendingPasswordReset(false);
     showToast('Sessão encerrada com sucesso.', 'info');
   };
 
@@ -242,8 +316,16 @@ export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ chil
         updateCitizen,
         isAuthenticated,
         authLoading,
+        authProvider,
+        authEmail,
+        pendingPasswordReset,
         login,
+        loginWithGoogle,
         registerCitizen,
+        resendConfirmation,
+        requestPasswordReset,
+        submitPasswordReset,
+        cancelPasswordReset,
         logout,
         states: INITIAL_STATES,
         toastMessage,

@@ -247,8 +247,6 @@ end
 $$;
 
 -- Permissões de execução para o cliente (anon key)
-grant execute on function public.register_citizen(text, text, text, text, text, text, text, text) to anon, authenticated;
-grant execute on function public.login_citizen(text, text) to anon, authenticated;
 grant execute on function public.get_citizen(uuid) to anon, authenticated;
 
 -- -------------------------------------------------------------
@@ -332,24 +330,227 @@ end
 $$;
 
 grant execute on function public.update_citizen_profile(uuid, text, text, text, text, text, text) to anon, authenticated;
-grant execute on function public.change_password(uuid, text, text) to anon, authenticated;
 
 -- -------------------------------------------------------------
--- Cidadão demo (login rápido "Gov.br"): cidadao@brasilsoberano.gov.br / cidadao123
+-- SUPABASE AUTH (identidade real do jogador)
+--
+-- A autenticação passa a ser feita pelo Supabase Auth (GoTrue):
+-- login por e-mail + senha com confirmação por e-mail e opção de
+-- "Continuar com Google". O cidadão do jogo é criado a partir do
+-- usuário autenticado e o id dele É o auth.uid() — uma identidade
+-- única para sessão e jogo. (Conta demo antiga foi removida.)
 -- -------------------------------------------------------------
-insert into public.citizens (name, email, cpf, role, state, party, password, avatar_url, title_number)
-values (
-  'Cidadão Soberano',
-  'cidadao@brasilsoberano.gov.br',
-  '000.000.000-00',
-  'Cidadão',
-  'DF',
-  'Sem Partido',
-  crypt('cidadao123', gen_salt('bf', 10)),
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-  '0987654321'
-)
-on conflict (email) do nothing;
+
+-- Purga do fluxo antigo: contas com senha bcrypt no banco (cadastro
+-- custom antigo + conta demo) não têm vínculo com o Supabase Auth e
+-- não fazem mais sentido — o jogo recomeça com o novo cadastro.
+-- Segura e idempotente: só remove cidadãos com password no banco;
+-- cidadãos criados pelo Auth (password nulo) nunca são afetados.
+delete from public.transactions t
+where exists (
+  select 1 from public.citizens c
+  where (t.from_citizen_id = c.id or t.to_citizen_id = c.id)
+    and c.password is not null
+);
+delete from public.citizens
+where password is not null;
+
+-- Funções do fluxo antigo (bcrypt custom) substituídas pelo Auth.
+drop function if exists public.register_citizen(text, text, text, text, text, text, text, text);
+drop function if exists public.login_citizen(text, text);
+drop function if exists public.change_password(uuid, text, text);
+
+-- Gera um CPF válido (dígitos verificadores corretos) e único no jogo.
+-- Usado no primeiro login via Google, que não entrega CPF.
+create or replace function public.generate_cpf()
+returns text
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_base text := '';
+  v_i int;
+  v_sum int;
+  v_d1 int;
+  v_d2 int;
+  v_cpf text;
+begin
+  loop
+    v_base := '';
+    for v_i in 1..9 loop
+      v_base := v_base || floor(random() * 10)::int::text;
+    end loop;
+
+    v_sum := 0;
+    for v_i in 1..9 loop
+      v_sum := v_sum + (substr(v_base, v_i, 1)::int * (10 - v_i));
+    end loop;
+    v_d1 := case when v_sum % 11 < 2 then 0 else 11 - (v_sum % 11) end;
+
+    v_sum := 0;
+    for v_i in 1..9 loop
+      v_sum := v_sum + (substr(v_base, v_i, 1)::int * (11 - v_i));
+    end loop;
+    v_sum := v_sum + (v_d1 * 2);
+    v_d2 := case when v_sum % 11 < 2 then 0 else 11 - (v_sum % 11) end;
+
+    v_cpf := v_base || v_d1::text || v_d2::text;
+
+    if not exists (
+      select 1 from public.citizens where regexp_replace(cpf, '\D', '', 'g') = v_cpf
+    ) then
+      return v_cpf;
+    end if;
+  end loop;
+end
+$$;
+
+-- CPF disponível para cadastro? (CPF é identidade única / chave PIX)
+create or replace function public.cpf_available(p_cpf text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_clean text := regexp_replace(coalesce(p_cpf, ''), '\D', '', 'g');
+begin
+  if length(v_clean) <> 11 then
+    return jsonb_build_object('ok', false, 'available', false, 'error', 'cpf_invalido');
+  end if;
+  if exists (
+    select 1 from public.citizens where regexp_replace(cpf, '\D', '', 'g') = v_clean
+  ) then
+    return jsonb_build_object('ok', true, 'available', false);
+  end if;
+  return jsonb_build_object('ok', true, 'available', true);
+end
+$$;
+
+-- Cria/retorna o cidadão do usuário autenticado (idempotente).
+-- Cadastro por e-mail: usa name/cpf/state gravados no user_metadata.
+-- Login via Google: não há CPF → gera um automaticamente.
+create or replace function public.finalize_citizen(
+  p_name text default null,
+  p_cpf text default null,
+  p_state text default null
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_row public.citizens;
+  v_meta jsonb;
+  v_email text;
+  v_name text;
+  v_cpf text;
+  v_state text;
+  v_avatar text;
+  v_title text;
+  v_start_balance bigint := 500000; -- R$ 5.000,00 de boas-vindas (em centavos)
+begin
+  if auth.uid() is null then
+    return jsonb_build_object('ok', false, 'error', 'nao_autenticado');
+  end if;
+
+  select * into v_row from public.citizens where id = auth.uid();
+  if found then
+    return jsonb_build_object('ok', true, 'citizen', public.citizen_to_json(v_row));
+  end if;
+
+  select raw_user_meta_data, email into v_meta, v_email
+  from auth.users
+  where id = auth.uid();
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'nao_encontrado');
+  end if;
+
+  v_name := coalesce(
+    nullif(trim(coalesce(p_name, '')), ''),
+    nullif(trim(coalesce(v_meta ->> 'name', '')), ''),
+    nullif(trim(coalesce(v_meta ->> 'full_name', '')), '')
+  );
+  if v_name is null then
+    v_name := coalesce(nullif(split_part(coalesce(v_email, ''), '@', 1), ''), 'Cidadão');
+  end if;
+
+  v_cpf := regexp_replace(coalesce(p_cpf, ''), '\D', '', 'g');
+  if length(v_cpf) <> 11 then
+    v_cpf := public.generate_cpf();
+  end if;
+  if exists (
+    select 1 from public.citizens where regexp_replace(cpf, '\D', '', 'g') = v_cpf
+  ) then
+    return jsonb_build_object('ok', false, 'error', 'cpf_ja_cadastrado');
+  end if;
+
+  v_state := upper(coalesce(
+    nullif(trim(coalesce(p_state, '')), ''),
+    nullif(trim(coalesce(v_meta ->> 'state', '')), ''),
+    'DF'
+  ));
+  v_avatar := nullif(trim(coalesce(v_meta ->> 'avatar_url', v_meta ->> 'picture', '')), '');
+  v_title := lpad(floor(random() * 10000000000)::bigint::text, 10, '0');
+
+  begin
+    insert into public.citizens (id, name, email, role, state, party, avatar_url, title_number, balance_cents)
+    values (
+      auth.uid(),
+      left(v_name, 120),
+      lower(trim(v_email)),
+      'Cidadão',
+      v_state,
+      'Sem Partido',
+      v_avatar,
+      v_title,
+      v_start_balance
+    )
+    returning * into v_row;
+  exception when unique_violation then
+    -- Corrida rara: outra chamada já criou. Devolve o cidadão existente.
+    select * into v_row from public.citizens where id = auth.uid();
+    if found then
+      return jsonb_build_object('ok', true, 'citizen', public.citizen_to_json(v_row));
+    end if;
+    return jsonb_build_object('ok', false, 'error', 'conta_ja_existente');
+  end;
+
+  -- Registra a origem do saldo no extrato (entrada vinda do "Banco Soberano").
+  insert into public.transactions (from_citizen_id, to_citizen_id, amount_cents, category, description)
+  values (null, v_row.id, v_start_balance, 'deposito', 'Bônus de boas-vindas do Brasil Soberano');
+
+  return jsonb_build_object('ok', true, 'citizen', public.citizen_to_json(v_row));
+end
+$$;
+
+-- Retorna o cidadão do usuário logado (usado no boot/revalidação da sessão).
+create or replace function public.get_my_citizen()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_row public.citizens;
+begin
+  if auth.uid() is null then
+    return jsonb_build_object('ok', false, 'error', 'nao_autenticado');
+  end if;
+
+  select * into v_row from public.citizens where id = auth.uid();
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'nao_encontrado');
+  end if;
+
+  return jsonb_build_object('ok', true, 'citizen', public.citizen_to_json(v_row));
+end
+$$;
+
+grant execute on function public.cpf_available(text) to anon, authenticated;
+grant execute on function public.finalize_citizen(text, text, text) to anon, authenticated;
+grant execute on function public.get_my_citizen() to anon, authenticated;
 
 -- -------------------------------------------------------------
 -- CARTEIRA / PIX

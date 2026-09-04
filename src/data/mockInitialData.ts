@@ -1,17 +1,4 @@
-import { Citizen, BrazilianStateRP } from '../types';
-
-export const INITIAL_CITIZEN: Citizen = {
-  id: 'cit-001',
-  name: 'Cidadão Soberano',
-  cpf: '000.000.000-00',
-  role: 'Cidadão',
-  state: 'DF',
-  party: 'Sem Partido',
-  email: 'cidadao@brasilsoberano.gov.br',
-  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-  titleNumber: '0987654321',
-  createdAt: Date.now()
-};
+import { BrazilianStateRP } from '../types';
 
 export const INITIAL_STATES: BrazilianStateRP[] = [
   // Centro-Oeste

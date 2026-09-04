@@ -7,16 +7,193 @@ export interface CitizenEnvelope {
   error?: string;
 }
 
+export interface SimpleEnvelope {
+  ok: boolean;
+  error?: string;
+}
+
+export interface CpfAvailability {
+  available: boolean;
+  error?: string;
+}
+
+export interface AuthUserInfo {
+  id: string;
+  email: string;
+  provider: 'email' | 'google';
+}
+
 export interface RegisterPayload {
   name: string;
   email: string;
   cpf: string;
   state: string;
-  party?: string;
-  password?: string;
-  avatarUrl: string;
-  titleNumber: string;
+  password: string;
 }
+
+// ---------------------------------------------------------------------------
+// Supabase Auth (GoTrue) — login por e-mail com confirmação + Google OAuth.
+// Erros são traduzidos para códigos snake_case curtos, como no restante do app.
+// ---------------------------------------------------------------------------
+
+function authError(message?: string): string {
+  const msg = (message || '').toLowerCase();
+  if (msg.includes('email not confirmed')) return 'email_nao_confirmado';
+  if (msg.includes('invalid login credentials')) return 'credenciais_invalidas';
+  if (msg.includes('already been registered') || msg.includes('already registered'))
+    return 'email_ja_cadastrado';
+  if (msg.includes('valid password') || msg.includes('at least 6 characters'))
+    return 'senha_curta';
+  if (msg.includes('password should be different')) return 'senha_igual';
+  if (msg.includes('rate limit') || msg.includes('too many')) return 'muitas_tentativas';
+  if (msg.includes('network') || msg.includes('fetch')) return 'rede';
+  return 'rede';
+}
+
+function authRedirect(): string {
+  return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+}
+
+export async function signUpWithPassword(data: RegisterPayload): Promise<SimpleEnvelope> {
+  try {
+    const { error } = await supabase.auth.signUp({
+      email: data.email.trim().toLowerCase(),
+      password: data.password,
+      options: {
+        emailRedirectTo: authRedirect(),
+        data: {
+          name: data.name.trim(),
+          cpf: data.cpf.trim(),
+          state: data.state || 'DF',
+        },
+      },
+    });
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] signUp exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+export async function signInWithPassword(email: string, password: string): Promise<SimpleEnvelope> {
+  try {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] signIn exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+export async function signInWithGoogle(): Promise<SimpleEnvelope> {
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: authRedirect() },
+    });
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] google exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+export async function resendConfirmationEmail(email: string): Promise<SimpleEnvelope> {
+  try {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+      options: { emailRedirectTo: authRedirect() },
+    });
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] resend exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+export async function sendPasswordReset(email: string): Promise<SimpleEnvelope> {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: authRedirect(),
+    });
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] reset exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+// Reauth com a senha atual (confirma a identidade) e então troca a senha.
+export async function changeAuthPassword(args: {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+}): Promise<SimpleEnvelope> {
+  try {
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: args.email.trim().toLowerCase(),
+      password: args.currentPassword,
+    });
+    if (reauthError) return { ok: false, error: 'senha_incorreta' };
+
+    const { error } = await supabase.auth.updateUser({ password: args.newPassword });
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] change password exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+export async function completePasswordReset(newPassword: string): Promise<SimpleEnvelope> {
+  try {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] complete reset exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+export async function signOut(): Promise<SimpleEnvelope> {
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) return { ok: false, error: authError(error.message) };
+    return { ok: true };
+  } catch (err) {
+    console.error('[Auth] signOut exception:', err);
+    return { ok: false, error: 'rede' };
+  }
+}
+
+export async function getAuthUserInfo(): Promise<AuthUserInfo | null> {
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) return null;
+    const meta = (data.user.app_metadata ?? {}) as { provider?: string };
+    return {
+      id: data.user.id,
+      email: data.user.email ?? '',
+      provider: meta.provider === 'google' ? 'google' : 'email',
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RPCs (envelope { ok, citizen?, error? }) — mesmas convenções do projeto.
+// ---------------------------------------------------------------------------
 
 async function callRpc(fn: string, params: Record<string, unknown>): Promise<CitizenEnvelope> {
   try {
@@ -33,25 +210,29 @@ async function callRpc(fn: string, params: Record<string, unknown>): Promise<Cit
   }
 }
 
-export function registerCitizen(data: RegisterPayload): Promise<CitizenEnvelope> {
-  return callRpc('register_citizen', {
-    p_name: data.name,
-    p_email: data.email,
-    p_cpf: data.cpf,
-    p_state: data.state,
-    p_party: data.party ?? 'Sem Partido',
-    p_password: data.password ?? '',
-    p_avatar_url: data.avatarUrl,
-    p_title_number: data.titleNumber,
-  });
+// Garante que o cidadão do usuário autenticado exista (idempotente).
+// Se o usuário veio do Google (sem CPF), o banco gera um CPF automático.
+export function finalizeCitizen(): Promise<CitizenEnvelope> {
+  return callRpc('finalize_citizen', {});
 }
 
-export function loginCitizen(identifier: string, password: string): Promise<CitizenEnvelope> {
-  return callRpc('login_citizen', { p_identifier: identifier, p_password: password });
+export function getMyCitizen(): Promise<CitizenEnvelope> {
+  return callRpc('get_my_citizen', {});
 }
 
-export function fetchCitizen(id: string): Promise<CitizenEnvelope> {
-  return callRpc('get_citizen', { p_id: id });
+export async function isCpfAvailable(cpf: string): Promise<CpfAvailability> {
+  try {
+    const { data, error } = await supabase.rpc('cpf_available', { p_cpf: cpf });
+    if (error) {
+      console.error('[Supabase] cpf_available error:', error);
+      return { available: false, error: 'rede' };
+    }
+    const env = (data ?? {}) as { available?: boolean; error?: string };
+    return { available: !!env.available, error: env.error };
+  } catch (err) {
+    console.error('[Supabase] cpf_available exception:', err);
+    return { available: false, error: 'rede' };
+  }
 }
 
 export interface UpdateProfilePayload {
@@ -72,23 +253,6 @@ export function updateCitizenProfile(id: string, data: UpdateProfilePayload): Pr
     p_city: data.city ?? '',
     p_bio: data.bio ?? '',
     p_phone: data.phone ?? '',
-  });
-}
-
-export interface PasswordEnvelope {
-  ok: boolean;
-  error?: string;
-}
-
-export function changePassword(args: {
-  id: string;
-  currentPassword: string;
-  newPassword: string;
-}): Promise<PasswordEnvelope> {
-  return callRpc('change_password', {
-    p_id: args.id,
-    p_current_password: args.currentPassword,
-    p_new_password: args.newPassword,
   });
 }
 
