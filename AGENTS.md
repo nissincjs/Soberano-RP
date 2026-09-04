@@ -16,7 +16,7 @@
 
 - Repo: `github.com/nissincjs/Soberano-RP` (a pasta local é `/home/ubuntu/Soberano-RP`).
 - Banco: Supabase (Postgres). **O `schema.sql` é idempotente e é a única fonte de verdade do banco** — sempre edite o arquivo e rode ele inteiro no SQL Editor do Supabase (DDL não roda pela anon key e **não** é aplicado automaticamente).
-- Deploy / produção: este mesmo host roda o site online em Docker (`Dockerfile` + `docker-compose.yml`, servindo o SPA + express). O site online é o container `soberano-rp-soberano-rp-1` (URL pública em `APP_URL`, porta interna 3005). Vars em `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`, `APP_URL`).
+- Deploy / produção: este mesmo host roda o site online em Docker (`Dockerfile` + `docker-compose.yml`, servindo o SPA + express). O site online é o container `soberano-rp-soberano-rp-1` (porta interna 3005, exposto só em `127.0.0.1`). URL pública: **https://brasilsoberano.site** (www incluso) — DNS na Cloudflare (A `@`/`www` -> `163.176.169.42`, proxied) e reverse proxy nginx no host (`/etc/nginx/conf.d/brasilsoberano.conf`) com cert Let's Encrypt. O domínio antigo `soberano.andreluiscs.online` foi desativado (vhost removido). Vars em `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`, `APP_URL`).
 
 ## Convenções e invariantes (NÃO quebrar)
 
