@@ -13,6 +13,9 @@ import {
   getAuthUserInfo,
   finalizeCitizen,
   getMyCitizen,
+  readOAuthError,
+  clearOAuthErrorFromUrl,
+  OAuthErrorInfo,
 } from '../lib/citizenApi';
 
 interface ToastInfo {
@@ -86,6 +89,24 @@ function friendlyError(error?: string): string {
   }
 }
 
+function oauthErrorText(error?: OAuthErrorInfo): string {
+  if (!error) return 'Não foi possível concluir o login com o Google. Tente novamente.';
+  const d = (error.description || '').toLowerCase();
+  if (error.code === 'access_denied') {
+    return 'Autorização negada ou cancelada na conta Google. Tente novamente.';
+  }
+  if (d.includes('already been registered') || d.includes('already registered') || d.includes('already linked')) {
+    return 'Este e-mail já está cadastrado por outro método (senha). Entre com e-mail e senha ou use outro e-mail no Google.';
+  }
+  if (error.code === 'invalid_request' || d.includes('redirect')) {
+    return 'Redirecionamento do login não liberado no Supabase. Em Authentication → URL Configuration, adicione este domínio em Redirect URLs.';
+  }
+  if (d.includes('provider')) {
+    return 'Provedor Google não configurado corretamente no Supabase (Authentication → Providers).';
+  }
+  return error.description || 'Não foi possível concluir o login com o Google. Tente novamente.';
+}
+
 export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [citizen, setCitizen] = useState<Citizen | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -135,6 +156,10 @@ export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ chil
       return true;
     }
 
+    console.warn('[Auth] Falha ao carregar cidadão após login:', {
+      finalize: finalize.error,
+      getMine: mine.error,
+    });
     setIsAuthenticated(false);
     return false;
   };
@@ -154,10 +179,22 @@ export const BrasilSoberanoProvider: React.FC<{ children: ReactNode }> = ({ chil
   useEffect(() => {
     let cancelled = false;
 
+    // Erro devolvido pelo Google/Supabase na redirect URL (ex.: e-mail já
+    // cadastrado por senha, autorização negada, redirect não permitido).
+    const oauthError = readOAuthError();
+    if (oauthError) {
+      clearOAuthErrorFromUrl();
+      showToast(oauthErrorText(oauthError), 'error');
+    }
+
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
 
+      if (event === 'SIGNED_IN') {
+        console.info('[Auth] SIGNED_IN');
+      }
       if (event === 'SIGNED_OUT') {
+        console.info('[Auth] SIGNED_OUT');
         setCitizen(null);
         setIsAuthenticated(false);
         setAuthProvider(null);

@@ -192,6 +192,34 @@ export async function getAuthUserInfo(): Promise<AuthUserInfo | null> {
 }
 
 // ---------------------------------------------------------------------------
+// Erros vindos do retorno do OAuth (Google). O GoTrue devolve os motivos de
+// falha como query params na redirect URL — ex.: e-mail já em uso por outro
+// método de login, usuário cancelou a autorização, redirect não permitido.
+// ---------------------------------------------------------------------------
+
+export interface OAuthErrorInfo {
+  code: string;
+  description?: string;
+}
+
+export function readOAuthError(): OAuthErrorInfo | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('error') || params.get('error_code');
+  if (!code) return null;
+  return { code, description: params.get('error_description') ?? undefined };
+}
+
+// Remove apenas os params de erro da URL (mantém code/state intactos para o
+// Supabase concluir um fluxo válido quando não houver erro).
+export function clearOAuthErrorFromUrl(): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  ['error', 'error_code', 'error_description'].forEach((key) => url.searchParams.delete(key));
+  window.history.replaceState(null, '', url.toString());
+}
+
+// ---------------------------------------------------------------------------
 // RPCs (envelope { ok, citizen?, error? }) — mesmas convenções do projeto.
 // ---------------------------------------------------------------------------
 
